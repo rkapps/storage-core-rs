@@ -1,0 +1,7 @@
+{
+    "rust-analyzer.linkedProjects": [],
+    "rust-analyzer.runnables.extraTestBinaryArgs": [
+        "--nocapture",
+        "--"
+    ]
+}
