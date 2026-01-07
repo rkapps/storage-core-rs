@@ -11,6 +11,8 @@ use std::{
 use tokio::fs;
 
 use crate::core::{RepoModel, Repository};
+use crate::fs::errors::FsRepositoryError;
+use crate::fs::utils;
 
 pub struct FsRepository<K, M>
 where
@@ -47,38 +49,35 @@ where
 
     // insert creates a new json file for the chat id. creates the directory structure too.
     async fn insert(&mut self, model: M) -> Result<()> {
+
         // Create the directories if they do not exist
         if !self.collection_path.exists() {
             let _ = fs::create_dir_all(&self.collection_path)
                 .await
-                .with_context(|| format!("Failed to create directory {:?}", self.collection_path));
+                .with_context(|| FsRepositoryError::DirectoryCreation { path: (self.collection_path.clone())})?;
         }
 
-        let id = model.id();
-        let filename = format!("{}.json", id);
-        let pathbuf = self.collection_path.clone().join(filename);
+        let pathbuf= utils::build_json_file_path(&self.collection_path, model.id());
         let json = serde_json::to_string_pretty(&model)?;
         fs::write(&pathbuf, json)
             .await
-            .with_context(|| format!("Failed to write file to '{:?}'", pathbuf))?;
+            .with_context(|| FsRepositoryError::FileCreation {path: pathbuf})?;
 
         Ok(())
     }
 
     // delete deletes the json file for the chat id.
     async fn delete(&mut self, id: K) -> Result<()> {
-        let filename = format!("{}.json", id);
-        let pathbuf = self.collection_path.clone().join(filename);
+        let pathbuf= utils::build_json_file_path(&self.collection_path, id);
         fs::remove_file(&pathbuf)
             .await
-            .with_context(|| format!("Failed to write file to '{:?}'", pathbuf))?;
+            .with_context(|| FsRepositoryError::FileDeletion {path: pathbuf})?;
         Ok(())
     }
 
     // find_by_id finds the json file for the id, marshalls that into the object
     async fn find_by_id(&mut self, id: K) -> Option<M> {
-        let filename = format!("{}.json", id);
-        let pathbuf = self.collection_path.clone().join(filename);
+        let pathbuf= utils::build_json_file_path(&self.collection_path, id);
         let contents = tokio::fs::read_to_string(&pathbuf).await.ok()?;
         serde_json::from_str(&contents).ok()
     }
@@ -95,6 +94,7 @@ where
 
         while let Ok(Some(entry)) = entries.next_entry().await {
             let pathbuf = self.collection_path.clone().join(entry.file_name());
+           
             if let Ok(contents) = tokio::fs::read_to_string(&pathbuf).await {
                 let data = serde_json::from_str::<M>(&contents).ok();
                 if let Some(value) = data {
@@ -107,18 +107,17 @@ where
 
     // update updates the json file for the id
     async fn update(&mut self, model: M) -> Result<()> {
-        let id = model.id();
-        let filename = format!("{}.json", id);
-        let pathbuf = self.collection_path.clone().join(filename);
+        let pathbuf= utils::build_json_file_path(&self.collection_path, model.id());
         let json = serde_json::to_string_pretty(&model)?;
         fs::write(&pathbuf, json)
             .await
-            .with_context(|| format!("Failed to write file to '{:?}'", pathbuf))?;
+            .with_context(|| FsRepositoryError::FileCreation {path: pathbuf})?;
         Ok(())
     }
 
 
 }
+
 
 #[cfg(test)]
 mod tests {

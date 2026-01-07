@@ -1,4 +1,4 @@
-use anyhow::Result;
+use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize, de::DeserializeOwned};
 use std::{
     any::Any,
@@ -11,7 +11,7 @@ use std::{
 use tracing::debug;
 
 use crate::{
-    core::{RepoModel, Repository}, fs::{collections::CollectionMetadata, repository::FsRepository}
+    core::{RepoModel, Repository}, fs::{collections::CollectionMetadata, errors::FsDatabaseError, repository::FsRepository, utils}
 };
 #[derive(Debug, Serialize, Deserialize)]
 pub struct FsDatabase {
@@ -35,10 +35,11 @@ impl FsDatabase {
 
     // load database info from file
     pub fn load_from_file(name: String, file_path: String) -> Result<Self> {
-        let full_path = PathBuf::from(&file_path).join(format!("{}.json", name));
-        debug!("Full path {:?}", full_path);
-        if Path::new(&full_path).exists() {
-            let contents = fs::read_to_string(&full_path)?;
+        let pathbuf= utils::build_json_file_path(&PathBuf::from(&file_path), name.clone());
+
+        debug!("Full path {:?}", pathbuf);
+        if Path::new(&pathbuf).exists() {
+            let contents = fs::read_to_string(&pathbuf)?;
             debug!("contents: {:?}", contents);
             Ok(serde_json::from_str(&contents)?)
         } else {
@@ -49,9 +50,9 @@ impl FsDatabase {
 
     // save database info to file
     pub fn save_to_file(&self) -> Result<()> {
-        let full_path = &self.file_path.join(format!("{}.json", &self.name));
+        let pathbuf= utils::build_json_file_path(&PathBuf::from(&self.file_path), self.name.clone());
         let json = serde_json::to_string_pretty(&self)?;
-        fs::write(&full_path, json)?;
+        fs::write(&pathbuf, json)?;
         Ok(())
     }
 
@@ -62,13 +63,6 @@ impl FsDatabase {
         M: RepoModel<K> + Send + Clone + Debug + Serialize + 'static + DeserializeOwned,
     {
         let full_path = self.file_path.join(&name);
-
-        debug!("Collections {:?}", self.collections);
-        debug!(
-            "Check for Name {:?} in collection in path {:#?}",
-            name.clone(),
-            full_path.clone()
-        );
 
         if !self.collections.contains_key(&name) {
             let metadata = CollectionMetadata { name: name.clone() };
@@ -82,20 +76,21 @@ impl FsDatabase {
             self.repos.insert(name.clone(), Box::new(respository));
         }
 
-        let v = self.repos.get_mut(&name).ok_or(format!(
-            "Repository for collection {:#?} could not get created",
-            name
-        ));
+        let v = self.repos.get_mut(&name).ok_or(
+        FsDatabaseError::CollectionRespositoryError { path: name.clone().into() }
+        );
+
         let any = match v {
             Ok(v) => v,
-            Err(e) => {
-                return Err(anyhow::anyhow!(format!("Error find repository: {:#?}", e)));
+            Err(_e) => {
+                return Err(anyhow::anyhow!(FsDatabaseError::CollectionRepoisitoryMissingError { path: name.clone().into() }));
             }
         };
 
         let repo: &mut FsRepository<K, M> = any
             .downcast_mut::<FsRepository<K, M>>()
-            .expect("Repository downcast error");
+            .context(FsDatabaseError::CollectionRepoisitoryDowncastError{path: name.into()})?;
+
         Ok(repo)
 
     }
