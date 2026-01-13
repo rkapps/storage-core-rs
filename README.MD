@@ -1,133 +1,91 @@
 # storage-core
 
-A simple, file-based JSON database library for Rust with a generic repository pattern.
+A lightweight, async storage library for Rust with a generic repository pattern. Provides the trait definition - implementations and concurrency strategies are up to you.
 
 ## Features
 
 - **Generic Repository Trait** - Type-safe CRUD operations for any serializable type
-- **File-per-Record Storage** - Each entity stored as a separate JSON file
-- **Async Support** - Built on tokio for non-blocking I/O
-- **Easy to Use** - Minimal setup, no external database required
-- **Flexible** - No forced concurrency primitives - implementations choose their approach
-- **Type Safe** - Leverages Rust's type system and serde
+- **Async-first** - Built with `async-trait` for non-blocking I/O
+- **Flexible Concurrency** - No enforced locking - choose your own strategy
+- **Send-safe** - Trait bound ensures thread-safe usage
 
 ## Installation
 
-Add to your `Cargo.toml`:
-
 ```toml
 [dependencies]
-storage-core = "0.1.0"  # or path = "../storage-core" for local
+storage-core = "0.1.0"
 ```
 
 ## Usage
 
-### Basic Example
-
-```rust
-use std::path::PathBuf;
-use anyhow::Result;
-use serde::{Deserialize, Serialize};
-use storage_core::{core::{RepoModel, Repository}, fs::repository::FsRepository};
-
-
-
-#[derive(Serialize, Deserialize, Clone, Debug)]
-struct User {
-    id: String,
-    name: String,
-}
-
-impl RepoModel<String> for User {
-    fn id(&self) -> String {
-        self.id.clone()
-    }
-    fn collection(&self) -> &'static str {
-        "user"
-    }
-}
-
-
-#[tokio::main]
-async fn main() -> Result<()>{
-
-    let pb = PathBuf::from("data/tests/users");
-    let mut repo = FsRepository::<String, User>::new("users".to_string(), pb);
-
-    // Insert
-    let user = User {
-        id: "5".to_string(),
-        name: "Alice".to_string(),
-    };
-    
-    let _ = repo.insert(user).await?;
-
-    // Find by ID
-    let found = repo.find_by_id("5".to_string()).await;
-    println!("{:?}", found);
-
-    Ok(())
-}
-```
-
-## API
-
-### Repository Trait
+## The Repository Trait
 
 ```rust
 #[async_trait]
-pub trait Repository<K, M> where M: Send{
-   
-    async fn insert(&mut self, repo: M) -> Result<()>; 
-    async fn delete(&mut self, id: K) -> Result<()>; 
-    async fn find_by_id(&mut self, id: K) -> Option<M>;
-    async fn find_all(&mut self) -> Vec<M>;
-    async fn update(&mut self, repo: M) -> Result<()>; 
+pub trait Repository: Send {
+    async fn insert(&mut self, repo: M) -> Result; 
+    async fn delete(&mut self, id: K) -> Result; 
+    async fn find_by_id(&mut self, id: K) -> Option;
+    async fn find_all(&mut self) -> Vec;
+    async fn update(&mut self, repo: M) -> Result; 
 }
 ```
 
-### FileRepository
+## Design Philosophy
 
-Implementation of `Repository` that stores data as JSON in a file.
+**What storage-core provides:**
 
-```rust
-impl<K, M> Repository<K, M> for FsRepository<K, M>
-where
-    K: Eq + Hash + Send + Clone + Debug + Display,
-    M: RepoModel<K> + Send + Clone + Serialize + Sized + DeserializeOwned,
-(
+- ✅ Repository trait definition
+- ✅ Reference file-based implementation
+- ✅ Thread-safe design (`: Send` bound)
 
-)
-```
+**What you provide:**
 
-## How It Works
+- Your concurrency strategy (Mutex, RwLock, single-threaded)
+- Your storage implementation (if not using FsRepository)
+- Your error handling approach
 
-1. **Storage Format** - Data is stored as a JSON array in multiple files
-2. **Thread Safety** - Uses `Mutex` for concurrent access
-3. **Automatic Serialization** - Leverages `serde` for JSON conversion
-4. **Simple File I/O** - Reads entire file into memory, modifies, writes back
+This separation gives you maximum flexibility to choose patterns that fit your application.
+
+## Advantages
+
+- ✅ **Flexible** - Choose your own concurrency model
+- ✅ **Async-first** - Non-blocking I/O
+- ✅ **Type-safe** - Compile-time guarantees
+- ✅ **Simple** - Minimal API surface
+- ✅ **Thread-safe** - Send bound enables concurrent usage
 
 ## Limitations
 
-- **No Indexing** - Linear search for `find_by_id`
-- **File Locking** - Basic mutex locking, not suitable for high concurrency
+- No built-in transactions
+- No query DSL (use find_all + filter)
+- No connection pooling
+- File-based implementation is best for small-medium datasets
 - **No Transactions** - Operations are not atomic across multiple calls
 
-**Use Cases:**
+**Best For:**
 
-- ✅ Small datasets (< 10,000 records)
-- ✅ Development and testing
-- ✅ Simple applications without heavy concurrency
-- ❌ Production systems with large datasets
-- ❌ High-concurrency applications
+- ✅ Applications needing flexible storage abstraction
+- ✅ Prototyping and development
+- ✅ Small to medium datasets
+- ✅ Learning Rust async patterns
 
-## Examples
+**Not Suitable For:**
 
-See the `examples/` directory for more usage patterns:
+- ❌ Complex queries or joins
+- ❌ Very large datasets
+- ❌ ACID transaction requirements
 
-- `repo.rs` - Simple CRUD operations for a repository
-- `storage.rs` - Use of the file database with multiple repositories
-- `concurrent.rs` - Working with multiple spawned tasks to create users and accounts
+### Basic Example
+
+examples/repo.rs - Simple single-threaded applications
+cargo run --example repo
+
+examples/storage.rs - Multiple repositories, but accessed one at a time
+cargo run --example storage
+
+examples/concurrentrs - Web servers, concurrent applications, multiple threads/tasks
+cargo run --example concurrent
 
 ## Contributing
 
