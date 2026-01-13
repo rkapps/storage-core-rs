@@ -13,7 +13,7 @@ pub trait RepoModel<K> {
 
 
 #[async_trait]
-pub trait Repository<K, M> where M: Send{
+pub trait Repository<K, M>:Send{
 
     async fn insert(&mut self, repo: M) -> Result<()>; 
     async fn delete(&mut self, id: K) -> Result<()>; 
