@@ -121,7 +121,6 @@ where
 
 #[cfg(test)]
 mod tests {
-    use std::sync::Mutex;
 
     use super::*;
     use once_cell::sync::Lazy;
@@ -135,20 +134,12 @@ mod tests {
 
     impl RepoModel<String> for TestUser {
         fn id(&self) -> String {
-            self.clone().id
+            self.id.clone()
         }
         fn collection(&self) -> &'static str {
             "user"
         }
     }
-
-    // Global mutable repo
-    static GLOBAL_USERS: Lazy<Mutex<FsRepository<String, TestUser>>> = Lazy::new(|| {
-        let pb = PathBuf::from("data/tests/users");
-        let repo = FsRepository::<String, TestUser>::new("users".to_string(), pb);
-
-        Mutex::new(repo)
-    });
 
     static USER1: Lazy<TestUser> = Lazy::new(|| TestUser {
         id: "1".to_string(),
@@ -160,45 +151,8 @@ mod tests {
     });
 
     #[tokio::test]
-    async fn test_all() {
-        let mut users = GLOBAL_USERS.lock().unwrap();
-        let user1 = &*USER1;
-        let user2 = &*USER2;
-
-        users
-            .insert(user1.clone())
-            .await
-            .expect("Failed to create user");
-
-        users
-            .insert(user2.clone())
-            .await
-            .expect("Failed to create user");
-
-        // find user
-        users
-            .find_by_id("1".to_string())
-            .await
-            .expect("User not found, test failed"); // fails if        
-
-        // // find users
-        let tusers = users.find_all().await;
-        assert_eq!(tusers.len(), 2);
-
-        // delete users
-        users
-            .delete("1".to_string())
-            .await
-            .expect("Failed to delete user");
-        users
-            .delete("2".to_string())
-            .await
-            .expect("Failed to delete user");
-    }
-
-    #[tokio::test]
     async fn test_insert_1() {
-        let pb = PathBuf::from("data/tests1/users");
+        let pb = PathBuf::from("data/tests/users");
         let mut repo = FsRepository::<String, TestUser>::new("users".to_string(), pb);
         let user1 = &*USER1;
         repo.insert(user1.clone())
@@ -211,12 +165,12 @@ mod tests {
             .expect("Failed to create user");
     }
 
-    // #[tokio::test]
-    // async fn test_find_all() {
-    //     let pb = PathBuf::from("data/tests1/users");
-    //     let mut repo = FsRepository::<String, TestUser>::new("users".to_string(), pb);
-    //     let values = repo.find_all().await;
-    //     assert_eq!(values.len(), 2);
+    #[tokio::test]
+    async fn test_find_all() {
+        let pb = PathBuf::from("data/tests1/users");
+        let mut repo = FsRepository::<String, TestUser>::new("users".to_string(), pb);
+        let values = repo.find_all().await;
+        assert_eq!(values.len(), 2);
 
-    // }
+    }
 }
