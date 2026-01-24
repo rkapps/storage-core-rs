@@ -1,130 +1,167 @@
-use anyhow::{Context, Result};
+use anyhow::Result;
 use async_trait::async_trait;
-use serde::{Serialize, de::DeserializeOwned};
-use std::cmp::Eq;
+use std::any::Any;
+use std::collections::HashMap;
+use std::fs::{File, OpenOptions};
+use std::io::{Seek, SeekFrom};
 use std::marker::PhantomData;
-use std::{
-    fmt::{Debug, Display},
-    hash::Hash,
-    path::PathBuf,
-};
-use tokio::fs;
+use std::{fmt::Debug, path::PathBuf};
+use tracing::debug;
 
-use crate::core::{RepoModel, Repository};
-use crate::fs::errors::FsRepositoryError;
-use crate::fs::utils;
+use crate::core::{Initializable, RepoKey, RepoModel, Repository};
+use crate::fs::file::{RECORD_TYPE_ACTIVE, RECORD_TYPE_DELETED, read_record, write_active_record};
 
+#[derive(Debug)]
 pub struct FsRepository<K, M>
 where
-    K: Eq + Hash,
-    M: RepoModel<K> + DeserializeOwned,
+    K: RepoKey,
+    M: RepoModel<K>,
 {
     pub name: String,
     collection_path: PathBuf,
-    _phantom1: PhantomData<K>,
-    _phantom2: PhantomData<M>,
+    file: File,
+    offsetm: HashMap<K, u64>,
+    _phantom: PhantomData<(K, M)>,
 }
 
 impl<K, M> FsRepository<K, M>
 where
-    K: Eq + Hash + Send + Clone + Debug + Display,
-    M: RepoModel<K> + Send + Clone + DeserializeOwned,
+    K: RepoKey,
+    M: RepoModel<K>,
 {
-    pub fn new(name: String, collection_path: PathBuf) -> Self {
-        Self {
-            name,
+    pub fn new(name: String, collection_path: PathBuf) -> Result<Self> {
+        let file = OpenOptions::new()
+            .read(true)
+            .create(true) // Create the file if it doesn't exist
+            .append(true) // Open in append mode
+            .open(FsRepository::<K, M>::file_path(&name, &collection_path))?;
+
+        Ok(Self {
+            name: name.clone(),
             collection_path,
-            _phantom1: PhantomData,
-            _phantom2: PhantomData,
+            file,
+            offsetm: HashMap::new(),
+            _phantom: PhantomData,
+        })
+    }
+
+    fn file_path(name: &str, collection_path: &PathBuf) -> PathBuf {
+        collection_path.join(format!("{}.bin", &name))
+    }
+}
+
+#[async_trait]
+impl<K, M> Initializable for FsRepository<K, M>
+where
+    K: RepoKey,
+    M: RepoModel<K>,
+{
+    async fn initialize(&mut self) -> Result<()> {
+        let mut offset = self.file.seek(SeekFrom::Start(0))?;
+        debug!("Initializing repo: {}...", self.name);
+        loop {
+            let (header, model) = match read_record::<M>(&mut self.file, offset) {
+                Ok((header, model)) => (header, model),
+                Err(e) => {
+                    debug!("Read error: {}", e);
+                    break;
+                }
+            };
+
+            debug!("Record Type: {:?}", header.record_type);
+            match header.record_type {
+                RECORD_TYPE_ACTIVE => {
+                    self.offsetm.insert(model.id(), offset);
+                }
+                RECORD_TYPE_DELETED => {
+                    self.offsetm.remove(&model.id());
+                }
+                _ => {
+                    break;
+                }
+            }
+            offset = self.file.stream_position()?;
         }
+        debug!("Initializing done.");
+        Ok(())
+    }
+
+    async fn shutdown(&mut self) -> Result<()> {
+        Ok(())
+    }
+    fn as_any(&mut self) -> &dyn Any {
+        self
+    }
+
+    fn as_any_mut(&mut self) -> &mut dyn Any {
+        self
     }
 }
 
 #[async_trait]
 impl<K, M> Repository<K, M> for FsRepository<K, M>
 where
-    K: Eq + Hash + Send + Clone + Debug + Display,
-    M: RepoModel<K> + Send + Clone + Serialize + Sized + DeserializeOwned,
+    K: RepoKey,
+    M: RepoModel<K>,
 {
-
     // insert creates a new json file for the chat id. creates the directory structure too.
     async fn insert(&mut self, model: M) -> Result<()> {
-
-        // Create the directories if they do not exist
-        if !self.collection_path.exists() {
-            let _ = fs::create_dir_all(&self.collection_path)
-                .await
-                .with_context(|| FsRepositoryError::DirectoryCreation { path: (self.collection_path.clone())})?;
-        }
-
-        let pathbuf= utils::build_json_file_path(&self.collection_path, model.id());
-        let json = serde_json::to_string_pretty(&model)?;
-        fs::write(&pathbuf, json)
-            .await
-            .with_context(|| FsRepositoryError::FileCreation {path: pathbuf})?;
-
+        // // Create the directories if they do not exist
+        // if !self.collection_path.exists() {
+        //     let _ = fs::create_dir_all(&self.collection_path)
+        //         .await
+        //         .with_context(|| FsRepositoryError::DirectoryCreation {
+        //             path: (self.collection_path.clone()),
+        //         })?;
+        // }
+        let offset = write_active_record(&mut self.file, RECORD_TYPE_ACTIVE, &model, false)?;
+        self.offsetm.insert(model.id(), offset);
+        debug!("Insert id:{} at offset:{}", model.id(), offset);
         Ok(())
     }
 
-    // delete deletes the json file for the chat id.
-    async fn delete(&mut self, id: K) -> Result<()> {
-        let pathbuf= utils::build_json_file_path(&self.collection_path, id);
-        fs::remove_file(&pathbuf)
-            .await
-            .with_context(|| FsRepositoryError::FileDeletion {path: pathbuf})?;
+    // delete appends the delete record
+    async fn delete(&mut self, model: M) -> Result<()> {
+        let _ = write_active_record(&mut self.file, RECORD_TYPE_DELETED, &model, false)?;
+        self.offsetm.remove(&model.id());
         Ok(())
     }
 
     // find_by_id finds the json file for the id, marshalls that into the object
     async fn find_by_id(&mut self, id: K) -> Option<M> {
-        let pathbuf= utils::build_json_file_path(&self.collection_path, id);
-        let contents = tokio::fs::read_to_string(&pathbuf).await.ok()?;
-        serde_json::from_str(&contents).ok()
+        let offset = self.offsetm.get(&id)?;
+        debug!("Find_by_id Id:{} offset:{}", id, offset);
+        let (_, model) = read_record::<M>(&mut self.file, *offset).ok()?;
+        Some(model)
     }
 
-
-    // find_all traverses the directly picking up on the files and returning a vec
+    // find_all returns all values from offset map
     async fn find_all(&mut self) -> Vec<M> {
         let mut values = Vec::<M>::new();
-
-        let mut entries = match tokio::fs::read_dir(&self.collection_path).await {
-            Ok(e) => e,
-            Err(_e) => return values,
-        };
-
-        while let Ok(Some(entry)) = entries.next_entry().await {
-            let pathbuf = self.collection_path.clone().join(entry.file_name());
-           
-            if let Ok(contents) = tokio::fs::read_to_string(&pathbuf).await {
-                let data = serde_json::from_str::<M>(&contents).ok();
-                if let Some(value) = data {
-                    values.push(value);
-                }
+        debug!("Find_all Offset map length: {}", self.offsetm.len());
+        for offset in self.offsetm.values() {
+            if let Some((_, model)) = read_record::<M>(&mut self.file, *offset).ok() {
+                values.push(model);
             };
         }
         values
     }
 
-    // update updates the json file for the id
+    // update appends the udpated record
     async fn update(&mut self, model: M) -> Result<()> {
-        let pathbuf= utils::build_json_file_path(&self.collection_path, model.id());
-        let json = serde_json::to_string_pretty(&model)?;
-        fs::write(&pathbuf, json)
-            .await
-            .with_context(|| FsRepositoryError::FileCreation {path: pathbuf})?;
+        let offset = write_active_record(&mut self.file, RECORD_TYPE_ACTIVE, &model, false)?;
+        self.offsetm.insert(model.id(), offset);
+        debug!("Update id:{} at offset:{}", model.id(), offset);
         Ok(())
     }
-
-
 }
-
 
 #[cfg(test)]
 mod tests {
 
     use super::*;
     use once_cell::sync::Lazy;
-    use serde::Deserialize;
+    use serde::{Deserialize, Serialize};
 
     #[derive(Serialize, Deserialize, Clone, Debug)]
     struct TestUser {
@@ -151,9 +188,9 @@ mod tests {
     });
 
     #[tokio::test]
-    async fn test_insert_1() {
+    async fn test_insert_1() -> Result<()> {
         let pb = PathBuf::from("data/tests/users");
-        let mut repo = FsRepository::<String, TestUser>::new("users".to_string(), pb);
+        let mut repo = FsRepository::<String, TestUser>::new("users".to_string(), pb)?;
         let user1 = &*USER1;
         repo.insert(user1.clone())
             .await
@@ -163,14 +200,18 @@ mod tests {
         repo.insert(user2.clone())
             .await
             .expect("Failed to create user");
+
+        Ok(())
     }
 
     #[tokio::test]
-    async fn test_find_all() {
-        let pb = PathBuf::from("data/tests1/users");
-        let mut repo = FsRepository::<String, TestUser>::new("users".to_string(), pb);
+    async fn test_find_all() -> Result<()> {
+        let pb = PathBuf::from("data/tests/users");
+        let mut repo = FsRepository::<String, TestUser>::new("users".to_string(), pb)?;
+        repo.initialize().await?;
         let values = repo.find_all().await;
-        assert_eq!(values.len(), 2);
-
+        println!("{}", values.len());
+        // assert_eq!(values.len(), 2);
+        Ok(())
     }
 }

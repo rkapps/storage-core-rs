@@ -1,10 +1,7 @@
-use std::{fmt::{Debug, Display}, hash::Hash, sync::Arc};
-
-use anyhow::Result;
-use serde::{Deserialize, Serialize, de::DeserializeOwned};
+use serde::{Deserialize, Serialize};
+use std::sync::Arc;
 use storage_core::{core::RepoModel, fs::database::FsDatabase};
 use tokio::sync::Mutex;
-
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct User {
@@ -21,19 +18,21 @@ impl RepoModel<String> for User {
     }
 }
 
-
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct Account {
     pub id: String,
     user_id: String,
-    account_id: String
+    account_id: String,
 }
 
 impl Account {
-
     pub fn new(user_id: String, account_id: String) -> Self {
         let id = [user_id.as_str(), "-", account_id.as_str()].concat();
-        Account{id, user_id, account_id}
+        Account {
+            id,
+            user_id,
+            account_id,
+        }
     }
 }
 
@@ -42,41 +41,17 @@ impl RepoModel<String> for Account {
         self.id.clone()
     }
 
-    fn collection(&self) ->  &'static str {
+    fn collection(&self) -> &'static str {
         "account"
     }
 }
 
-
-
-pub struct Storage {
-    pub db: FsDatabase,
-    collections: Vec<String>
-}
-
-impl Storage {
-
-    pub fn new(db: String, file_path: String) -> Self {
-        Storage{db: FsDatabase::new(db, file_path), collections: Vec::new()}
-    }
-
-    pub fn register_collection<K, M>(&mut self, name: String) -> Result<()> 
-    where
-        K: Eq + Hash + Send + Clone + Debug + Display + 'static,
-        M: RepoModel<K> + Send + Clone + Debug + Serialize + 'static + DeserializeOwned {
-            
-        let _ = self.db.collection::<K,M>(name); 
-        Ok(())
-    }
-}
-
-
-pub struct Service {
-    pub storage: Arc<Mutex<Storage>>
+pub(crate) struct Service {
+    pub db: Arc<Mutex<FsDatabase>>,
 }
 
 impl Service {
-    pub fn new(storage: Mutex<Storage>) -> Self{
-        Service{storage : Arc::new(storage)}
+    pub fn new(db: Mutex<FsDatabase>) -> Self {
+        Service { db: Arc::new(db) }
     }
 }
