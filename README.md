@@ -1,22 +1,15 @@
 # storage-core
 
-A lightweight, async storage library for Rust with a generic repository pattern. Provides the trait definition - implementations and concurrency strategies are up to you.
+storage-core provides a lightweight repository pattern implementation backed by binary files. Each collection is stored as a single append-only binary file with an in-memory index for fast lookups.
 
 ## Features
 
-- **Generic Repository Trait** - Type-safe CRUD operations for any serializable type
-- **Async-first** - Built with `async-trait` for non-blocking I/O
-- **Flexible Concurrency** - No enforced locking - choose your own strategy
-- **Send-safe** - Trait bound ensures thread-safe usage
-
-## Installation
-
-```toml
-[dependencies]
-storage-core = "0.1.0"
-```
-
-## Usage
+- **Simple CRUD operations** - Insert, find, update, delete
+- **Collection-based** - Organize data into named collections
+- **Append-only log** - Write-optimized with crash safety
+- **Fast lookups** - In-memory offset map for O(1) retrieval by ID
+- **Forward-compatible format** - Versioned binary headers for future extensions
+- **Async-ready** - Trait supports both sync and async implementations
 
 ## The Repository Trait
 
@@ -31,29 +24,58 @@ pub trait Repository: Send {
 }
 ```
 
-## Design Philosophy
+## File Format
 
-**What storage-core provides:**
+Each collection is stored as a single `.bin` file with the following structure:
 
-- ✅ Repository trait definition
-- ✅ Reference file-based implementation
-- ✅ Thread-safe design (`: Send` bound)
+```
+[RecordHeader: 32 bytes]  ← Version, type, length, timestamp, CRC32, flags
+[BSON payload]            ← Serialized document
 
-**What you provide:**
+[RecordHeader: 32 bytes]
+[BSON payload]
+...
+```
 
-- Your concurrency strategy (Mutex, RwLock, single-threaded)
-- Your storage implementation (if not using FsRepository)
-- Your error handling approach
+**Header fields:**
 
-This separation gives you maximum flexibility to choose patterns that fit your application.
+- Magic number (file format validation)
+- Version (schema evolution)
+- Record type (Active/Deleted)
+- Length (total record size)
+- Timestamp (write time)
+- CRC32 (corruption detection)
+- Flags (compression, encryption, etc.)
 
-## Advantages
+## Design Decisions
 
-- ✅ **Flexible** - Choose your own concurrency model
-- ✅ **Async-first** - Non-blocking I/O
-- ✅ **Type-safe** - Compile-time guarantees
-- ✅ **Simple** - Minimal API surface
-- ✅ **Thread-safe** - Send bound enables concurrent usage
+**Append-only log:**
+
+- Writes always go to end of file
+- Updates create new version (old data remains)
+- Deletes write tombstone records
+- Simple, crash-safe, no corruption risk
+
+**In-memory offset map:**
+
+- Built on startup by scanning file
+- Maps ID → file offset
+- O(1) lookups by ID
+- Trade-off: startup time vs runtime speed
+
+**BSON encoding:**
+
+- Self-describing format
+- Handles complex nested data
+- Compatible with MongoDB
+- Slightly larger than custom binary
+
+**Binary headers:**
+
+- Forward-compatible (version + flags)
+- Corruption detection (CRC32)
+- Metadata without parsing payload
+- Fixed 32-byte size
 
 ## Limitations
 
@@ -81,11 +103,21 @@ This separation gives you maximum flexibility to choose patterns that fit your a
 examples/repo.rs - Simple single-threaded applications
 cargo run --example repo
 
-examples/storage.rs - Multiple repositories, but accessed one at a time
-cargo run --example storage
+examples/database.rs - Multiple repositories, but accessed one at a time
+cargo run --example database
 
 examples/concurrentrs - Web servers, concurrent applications, multiple threads/tasks
 cargo run --example concurrent
+
+## Future Work
+
+- [ ] Compaction (remove old versions and tombstones)
+- [ ] Persistent offset map (faster startup)
+- [ ] Vector index for embeddings (RAG support)
+- [ ] Query capabilities (filtering, sorting)
+- [ ] Additional backends (MongoDB, PostgreSQL)
+- [ ] Transactions
+- [ ] Compression
 
 ## Contributing
 

@@ -6,7 +6,7 @@ use std::fs::{File, OpenOptions};
 use std::io::{Seek, SeekFrom};
 use std::marker::PhantomData;
 use std::{fmt::Debug, path::PathBuf};
-use tracing::debug;
+use tracing::{debug, info, warn};
 
 use crate::core::{Initializable, RepoKey, RepoModel, Repository};
 use crate::fs::file::{RECORD_TYPE_ACTIVE, RECORD_TYPE_DELETED, read_record, write_active_record};
@@ -58,12 +58,12 @@ where
 {
     async fn initialize(&mut self) -> Result<()> {
         let mut offset = self.file.seek(SeekFrom::Start(0))?;
-        debug!("Initializing repo: {}...", self.name);
+        info!("Initializing repo: {}...", self.name);
         loop {
             let (header, model) = match read_record::<M>(&mut self.file, offset) {
                 Ok((header, model)) => (header, model),
                 Err(e) => {
-                    debug!("Read error: {}", e);
+                    // warn!("Read error: {}", e);
                     break;
                 }
             };
@@ -82,7 +82,7 @@ where
             }
             offset = self.file.stream_position()?;
         }
-        debug!("Initializing done.");
+        info!("Initializing done.");
         Ok(())
     }
 

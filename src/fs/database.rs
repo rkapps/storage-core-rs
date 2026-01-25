@@ -52,7 +52,7 @@ impl FsDatabase {
         debug!("Loading database from {:?}", pathbuf);
         if Path::new(&pathbuf).exists() {
             let contents = fs::read_to_string(&pathbuf)?;
-            debug!("contents: {:?}", contents);
+            debug!("contents: {:#?}", contents);
             Ok(serde_json::from_str(&contents)?)
         } else {
             debug!("File does not exist");
