@@ -151,6 +151,18 @@ where
         values
     }
 
+    // find_finds filtered values
+    async fn find(&mut self, filter: Option<Filter>) -> Vec<M> 
+        where M: Filterable{
+        let mut items = self.find_all().await;
+        if let Some(f) = filter {
+            // Apply conditions
+            items = items.into_iter().filter(|item| item.matches_filter(&f)).collect();
+        }
+        items
+    }
+
+
     async fn semantic_search(
         &mut self,
         query_vector: &[f32],

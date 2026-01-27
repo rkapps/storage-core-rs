@@ -38,6 +38,9 @@ pub trait Repository<K, M>: Send + Sync {
     async fn find_all(&mut self) -> Vec<M>;
     async fn update(&mut self, repo: M) -> Result<()>;
 
+    async fn find(&mut self, filter: Option<Filter>) -> Vec<M>
+        where M: Filterable;
+
     async fn semantic_search(
         &mut self,
         query_vector: &[f32],
@@ -61,7 +64,7 @@ pub trait VectorEmbedding: Send + Sync + Debug {
     fn vector(&self) -> &[f32];
 }
 
-
+//Filterable trait 
 pub trait Filterable {
     fn matches_filter(&self, _filter: &Filter) -> bool {
         true  // Default: pass all (no filtering)
