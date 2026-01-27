@@ -6,7 +6,7 @@ use std::fs::{File, OpenOptions};
 use std::io::{Seek, SeekFrom};
 use std::marker::PhantomData;
 use std::{fmt::Debug, path::PathBuf};
-use tracing::{debug, info, warn};
+use tracing::{debug, info};
 
 use crate::core::{
     Filterable, Initializable, RepoKey, RepoModel, Repository, VectorEmbedding
@@ -66,7 +66,7 @@ where
         loop {
             let (header, model) = match read_record::<M>(&mut self.file, offset) {
                 Ok((header, model)) => (header, model),
-                Err(e) => {
+                Err(_e) => {
                     // warn!("Read error: {}", e);
                     break;
                 }

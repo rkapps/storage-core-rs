@@ -17,8 +17,8 @@ pub(super) const RECORD_TYPE_ACTIVE: u8 = 0x01;
 pub(super) const RECORD_TYPE_DELETED: u8 = 0x02;
 
 // Flags
-pub(super) const FLAG_COMPRESSED: u16 = 0x0001;
-pub(super) const FLAG_ENCRYPTED: u16 = 0x0002;
+// pub(super) const FLAG_COMPRESSED: u16 = 0x0001;
+// pub(super) const FLAG_ENCRYPTED: u16 = 0x0002;
 pub(super) const FLAG_HAS_VECTOR: u16 = 0x0010; // Relevant for your RAG use case!
 
 #[repr(C)]
@@ -94,9 +94,9 @@ impl RecordHeader {
         Ok(())
     }
 
-    fn has_flag(&self, flag: u16) -> bool {
-        self.flags & flag != 0
-    }
+    // fn has_flag(&self, flag: u16) -> bool {
+    //     self.flags & flag != 0
+    // }
 
     fn set_flag(&mut self, flag: u16) {
         self.flags |= flag;

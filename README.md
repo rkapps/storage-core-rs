@@ -9,7 +9,16 @@ storage-core provides a lightweight repository pattern implementation backed by 
 - **Append-only log** - Write-optimized with crash safety
 - **Fast lookups** - In-memory offset map for O(1) retrieval by ID
 - **Forward-compatible format** - Versioned binary headers for future extensions
+- **Vector search capabilities** - Semantic similarity
+- **Dynamic filtering** - `Filter` struct and `Filterable` trait
 - **Async-ready** - Trait supports both sync and async implementations
+
+## Vector Search
+
+- **Cosine similarity**: Measures semantic similarity between embeddings
+- **Vector search**: Finds top-k most similar vectors from a collection
+- **Generic implementation**: Works with any model implementing `VectorEmbedding`
+
 
 ## The Repository Trait
 
@@ -21,8 +30,20 @@ pub trait Repository: Send {
     async fn find_by_id(&mut self, id: K) -> Option;
     async fn find_all(&mut self) -> Vec;
     async fn update(&mut self, repo: M) -> Result; 
+    async fn semantic_search(
+            &mut self,
+            query_vector: &[f32],
+            top_k: usize,
+            filter: Option<Filter>,
+        ) -> Vec<(M, f32)>
+        where
+            M: VectorEmbedding + Filterable + RepoModel<K>;    
 }
 ```
+
+**`RepoModel<K>`**: Base model trait with `id()`
+**`VectorEmbedding`**: Models with vector embeddings
+**`Filterable`**: Models that support dynamic filtering
 
 ## File Format
 
@@ -113,8 +134,6 @@ cargo run --example concurrent
 
 - [ ] Compaction (remove old versions and tombstones)
 - [ ] Persistent offset map (faster startup)
-- [ ] Vector index for embeddings (RAG support)
-- [ ] Query capabilities (filtering, sorting)
 - [ ] Additional backends (MongoDB, PostgreSQL)
 - [ ] Transactions
 - [ ] Compression

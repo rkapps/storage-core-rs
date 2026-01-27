@@ -63,7 +63,7 @@ pub trait VectorEmbedding: Send + Sync + Debug {
 
 
 pub trait Filterable {
-    fn matches_filter(&self, filter: &Filter) -> bool {
+    fn matches_filter(&self, _filter: &Filter) -> bool {
         true  // Default: pass all (no filtering)
     }
 }
