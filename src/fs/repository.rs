@@ -8,8 +8,12 @@ use std::marker::PhantomData;
 use std::{fmt::Debug, path::PathBuf};
 use tracing::{debug, info, warn};
 
-use crate::core::{Initializable, RepoKey, RepoModel, Repository};
+use crate::core::{
+    Filterable, Initializable, RepoKey, RepoModel, Repository, VectorEmbedding
+};
 use crate::fs::file::{RECORD_TYPE_ACTIVE, RECORD_TYPE_DELETED, read_record, write_active_record};
+use crate::fs::filter::Filter;
+use crate::vector::search::vector_search;
 
 #[derive(Debug)]
 pub struct FsRepository<K, M>
@@ -145,6 +149,45 @@ where
             };
         }
         values
+    }
+
+    async fn semantic_search(
+        &mut self,
+        query_vector: &[f32],
+        top_k: usize,
+        filter: Option<Filter>,
+    ) -> Vec<(M, f32)>
+    where
+        M: VectorEmbedding + Filterable + RepoModel<K>,
+    {
+        let mut items = self.find_all().await;
+
+        if let Some(f) = filter {
+            // Apply conditions
+            items = items.into_iter().filter(|item| item.matches_filter(&f)).collect();
+        }
+
+        // create vector with tuple
+        let candidates: Vec<(K, Vec<f32>)> = items
+            .iter()
+            .map(|entry| (entry.id().clone(), entry.vector().to_vec()))
+            .collect();
+
+        let results = vector_search(query_vector, &candidates, top_k);
+
+        // iterator through result and return vector of (M, f32)
+        let final_results: Vec<(M, f32)> = results
+            .iter()
+            .filter_map(|(id, score)| {
+                items
+                    .iter()
+                    .find(|item| item.id() == *id)
+                    .cloned()
+                    .map(|item| (item, *score))
+            })
+            .collect();
+
+        final_results
     }
 
     // update appends the udpated record
