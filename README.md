@@ -19,7 +19,6 @@ storage-core provides a lightweight repository pattern implementation backed by 
 - **Vector search**: Finds top-k most similar vectors from a collection
 - **Generic implementation**: Works with any model implementing `VectorEmbedding`
 
-
 ## The Repository Trait
 
 ```rust
