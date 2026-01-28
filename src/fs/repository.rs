@@ -9,10 +9,10 @@ use std::{fmt::Debug, path::PathBuf};
 use tracing::{debug, info};
 
 use crate::core::{
-    Filterable, Initializable, RepoKey, RepoModel, Repository, VectorEmbedding
+    Searchable, Initializable, RepoKey, RepoModel, Repository, VectorEmbedding
 };
 use crate::fs::file::{RECORD_TYPE_ACTIVE, RECORD_TYPE_DELETED, read_record, write_active_record};
-use crate::fs::filter::Filter;
+use crate::fs::search::{SearchCriteria, apply_sort};
 use crate::vector::search::vector_search;
 
 #[derive(Debug)]
@@ -152,12 +152,22 @@ where
     }
 
     // find_finds filtered values
-    async fn find(&mut self, filter: Option<Filter>) -> Vec<M> 
-        where M: Filterable{
+    async fn find(&mut self, criteria: Option<SearchCriteria>) -> Vec<M> 
+        where M: Searchable{
         let mut items = self.find_all().await;
-        if let Some(f) = filter {
+        if let Some(f) = criteria {
             // Apply conditions
             items = items.into_iter().filter(|item| item.matches_filter(&f)).collect();
+
+            // Apply sort
+            if let Some(sort_fields) = f.sort_fields {
+                items = apply_sort(items, &sort_fields);
+            }
+
+            // Apply limit
+            if let Some(limit) = f.limit {
+                items.truncate(limit);
+            }
         }
         items
     }
@@ -167,17 +177,12 @@ where
         &mut self,
         query_vector: &[f32],
         top_k: usize,
-        filter: Option<Filter>,
+        criteria: Option<SearchCriteria>,
     ) -> Vec<(M, f32)>
     where
-        M: VectorEmbedding + Filterable + RepoModel<K>,
+        M: VectorEmbedding + Searchable + RepoModel<K>,
     {
-        let mut items = self.find_all().await;
-
-        if let Some(f) = filter {
-            // Apply conditions
-            items = items.into_iter().filter(|item| item.matches_filter(&f)).collect();
-        }
+        let items = self.find(criteria).await;
 
         // create vector with tuple
         let candidates: Vec<(K, Vec<f32>)> = items

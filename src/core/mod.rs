@@ -8,7 +8,8 @@ use anyhow::Result;
 use async_trait::async_trait;
 use serde::{Serialize, de::DeserializeOwned};
 
-use crate::fs::filter::Filter;
+use crate::fs::search::SearchCriteria;
+
 
 // 1. Define a trait alias to consolidate constraints
 pub trait RepoKey:
@@ -38,17 +39,17 @@ pub trait Repository<K, M>: Send + Sync {
     async fn find_all(&mut self) -> Vec<M>;
     async fn update(&mut self, repo: M) -> Result<()>;
 
-    async fn find(&mut self, filter: Option<Filter>) -> Vec<M>
-        where M: Filterable;
+    async fn find(&mut self, search: Option<SearchCriteria>) -> Vec<M>
+        where M: Searchable;
 
     async fn semantic_search(
         &mut self,
         query_vector: &[f32],
         top_k: usize,
-        filter: Option<Filter>,
+        criteria: Option<SearchCriteria>,
     ) -> Vec<(M, f32)>
     where
-        M: VectorEmbedding + Filterable + RepoModel<K>;
+        M: VectorEmbedding + Searchable + RepoModel<K>;
 }
 
 #[async_trait]
@@ -64,9 +65,19 @@ pub trait VectorEmbedding: Send + Sync + Debug {
     fn vector(&self) -> &[f32];
 }
 
-//Filterable trait 
-pub trait Filterable {
-    fn matches_filter(&self, _filter: &Filter) -> bool {
-        true  // Default: pass all (no filtering)
+//Searchable trait 
+pub trait Searchable {
+    fn matches_filter(&self, _criteria: &SearchCriteria) -> bool {
+        true  // Default: pass all (no Searching)
     }
+
+    fn get_field_value(&self, field: &str) -> Option<SortValue>; 
+
+}
+
+#[derive(Debug, Clone, PartialOrd, Ord, PartialEq, Eq)]
+pub enum SortValue {
+    String(String),
+    Float(ordered_float::OrderedFloat<f64>),
+    Int(i64),
 }
