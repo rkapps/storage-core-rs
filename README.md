@@ -10,7 +10,7 @@ storage-core provides a lightweight repository pattern implementation backed by 
 - **Fast lookups** - In-memory offset map for O(1) retrieval by ID
 - **Forward-compatible format** - Versioned binary headers for future extensions
 - **Vector search capabilities** - Semantic similarity
-- **Dynamic filtering** - `Filter` struct and `Filterable` trait
+- **Dynamic Search** - `SearchCriteria` struct and `Searchable` trait
 - **Async-ready** - Trait supports both sync and async implementations
 
 ## Vector Search
@@ -42,7 +42,7 @@ pub trait Repository: Send {
 
 **`RepoModel<K>`**: Base model trait with `id()`
 **`VectorEmbedding`**: Models with vector embeddings
-**`Filterable`**: Models that support dynamic filtering
+**`Searchable`**: Models that support dynamic search with sort and limit
 
 ## File Format
 
