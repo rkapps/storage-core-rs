@@ -29,7 +29,7 @@ pub enum SearchOp {
 #[derive(Debug, Clone)]
 pub enum SearchValue {
     String(String),
-    Float(f64),
+    Decimal(rust_decimal::Decimal),
     Int(i64),
     Bool(bool),
     Array(Vec<String>),  // For "In" operator

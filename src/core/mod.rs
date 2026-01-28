@@ -78,6 +78,6 @@ pub trait Searchable {
 #[derive(Debug, Clone, PartialOrd, Ord, PartialEq, Eq)]
 pub enum SortValue {
     String(String),
-    Float(ordered_float::OrderedFloat<f64>),
+    Decimal(rust_decimal::Decimal),
     Int(i64),
 }
